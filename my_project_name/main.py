@@ -14,6 +14,7 @@ from nio import (
     MegolmEvent,
     RoomMessageText,
     UnknownEvent,
+    RoomMemberEvent,
 )
 
 from my_project_name.callbacks import Callbacks
@@ -66,6 +67,7 @@ async def main():
     client.add_event_callback(callbacks.invite, (InviteMemberEvent,))
     client.add_event_callback(callbacks.decryption_failure, (MegolmEvent,))
     client.add_event_callback(callbacks.unknown, (UnknownEvent,))
+    client.add_event_callback(callbacks.member, (RoomMemberEvent,))
 
     # Keep trying to reconnect on failure (with some time in-between)
     while True:

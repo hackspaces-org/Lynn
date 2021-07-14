@@ -1,4 +1,5 @@
 import logging
+import re
 
 from nio import (
     AsyncClient,
@@ -9,6 +10,7 @@ from nio import (
     RoomGetEventError,
     RoomMessageText,
     UnknownEvent,
+    RoomMemberEvent,
 )
 
 from my_project_name.bot_commands import Command
@@ -87,20 +89,6 @@ class Callbacks:
         """
         logger.debug(f"Got invite to {room.room_id} from {event.sender}.")
 
-        # Attempt to join 3 times before giving up
-        for attempt in range(3):
-            result = await self.client.join(room.room_id)
-            if type(result) == JoinError:
-                logger.error(
-                    f"Error joining room {room.room_id} (attempt %d): %s",
-                    attempt,
-                    result.message,
-                )
-            else:
-                break
-        else:
-            logger.error("Unable to join room: %s", room.room_id)
-
         # Successfully joined room
         logger.info(f"Joined {room.room_id}")
 
@@ -131,21 +119,6 @@ class Callbacks:
         if reacted_to_event.sender != self.config.user_id:
             return
 
-        # Send a message acknowledging the reaction
-        reaction_sender_pill = make_pill(event.sender)
-        reaction_content = (
-            event.source.get("content", {}).get("m.relates_to", {}).get("key")
-        )
-        message = (
-            f"{reaction_sender_pill} reacted to this event with `{reaction_content}`!"
-        )
-        await send_text_to_room(
-            self.client,
-            room.room_id,
-            message,
-            reply_to_event_id=reacted_to_id,
-        )
-
     async def decryption_failure(self, room: MatrixRoom, event: MegolmEvent) -> None:
         """Callback for when an event fails to decrypt. Inform the user.
 
@@ -164,16 +137,6 @@ class Callbacks:
             f"commands a second time)."
         )
 
-        red_x_and_lock_emoji = "❌ 🔐"
-
-        # React to the undecryptable event with some emoji
-        await react_to_event(
-            self.client,
-            room.room_id,
-            event.event_id,
-            red_x_and_lock_emoji,
-        )
-
     async def unknown(self, room: MatrixRoom, event: UnknownEvent) -> None:
         """Callback for when an event with a type that is unknown to matrix-nio is received.
         Currently this is used for reaction events, which are not yet part of a released
@@ -188,11 +151,28 @@ class Callbacks:
             # Get the ID of the event this was a reaction to
             relation_dict = event.source.get("content", {}).get("m.relates_to", {})
 
-            reacted_to = relation_dict.get("event_id")
-            if reacted_to and relation_dict.get("rel_type") == "m.annotation":
-                await self._reaction(room, event, reacted_to)
-                return
-
         logger.debug(
             f"Got unknown event with type to {event.type} from {event.sender} in {room.room_id}."
         )
+
+    async def member(self, room: MatrixRoom, event: RoomMemberEvent) -> None:
+        logger.info(
+            f"membership change: {event.membership} from {event.sender} in {room.room_id}."
+        )
+
+        if "!fBmBGtfevIFUoAdTek:libera.chat" != room.room_id:
+            return
+
+        if "join" != event.membership:
+            return
+
+        #if not re.match(r'^Guest\d+$',room.user_name(event.sender)):
+        if not re.match(r'^@Guest\d+:libera.chat$',event.sender):
+            return
+
+        await send_text_to_room(
+            self.client,
+            room.room_id,
+            f"Moin and welcome, {room.user_name(event.sender)}! Our customer satisfaction is very important to us. Your number is 42, please take a seat and wait for your hacker to become available for your request.",
+        )
+
